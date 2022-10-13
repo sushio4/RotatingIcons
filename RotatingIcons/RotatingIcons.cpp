@@ -1,10 +1,42 @@
-﻿#define _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
 
 #include <windows.h>
 #include <commctrl.h>
 #include <math.h>
 #include <chrono>
+#include <fstream>
+#include <string>
+#include <iomanip>
 
+void LogMessage(std::string message, bool closeProgram = false)
+{
+	using namespace std::chrono;
+
+	std::ofstream LogFile("RotatingIcons_Log.txt", std::ios::app);
+
+	if (!LogFile.is_open())
+		LogFile.open("RotatingIcons_Log.txt", std::ios::out);
+
+	if (!LogFile.is_open())
+		exit(0x0BADF11E);
+
+	auto now = time_point<system_clock>( system_clock::now() );
+	auto in_time_t = system_clock::to_time_t(now);
+
+	tm time;
+	localtime_s(&time, &in_time_t);
+
+	LogFile << std::put_time(&time, "[%d.%m.%Y - %X]: ");
+	LogFile << message << std::endl;
+
+	if (closeProgram)
+	{
+		LogFile << "[Program terminated]" << std::endl;
+		LogFile.close();
+		exit(-1);
+	}
+	LogFile.close();
+}
 
 void GetDesktopResolution(int& horizontal, int& vertical)
 {
@@ -32,7 +64,7 @@ int main()
 	HANDLE he;
 	DWORD Pi;
 
-	//getting all the important stuff, i don't know how
+	//getting all the important stuff
 	hd = FindWindowA("Progman", NULL);
 	hd = FindWindowEx(hd, 0, L"SHELLDLL_DefView", NULL);
 	hd = FindWindowEx(hd, 0, L"SysListView32", NULL);
@@ -41,6 +73,10 @@ int main()
 	he = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, false, Pi);
 
 	POINT* pC = (POINT*)VirtualAllocEx(he, NULL, sizeof(POINT), MEM_COMMIT, PAGE_READWRITE);
+
+	if (pC == nullptr)
+		LogMessage("Couldn't allocate memory to SysListView32", true);
+
 	WriteProcessMemory(he, pC, &pC, sizeof(POINT), NULL);
 
 	int count;
@@ -50,12 +86,12 @@ int main()
 	const double omega = 0.0001;
 
 	count = SendMessage(hd, LVM_GETITEMCOUNT, 0, 0);
-	if (count < 2) return 0;
+	if (count < 2) LogMessage("Not enough icons to rotate", true);
 
-	int leastDist = 18000000;
+	int leastDist = INT_MAX;
 	GetDesktopResolution(centerx, centery);
-	centerx /= 2;
-	centery /= 2;
+	centerx *= 0.5;
+	centery *= 0.5;
 
 	for (int i = 0; i < count; i++)
 	{
@@ -73,7 +109,7 @@ int main()
 
 	auto startTime = getTime();
 
-	while (1)
+	for(long int j = 0;;j++)
 	{
 		//time
 		double currentTime = (getTime() - startTime)/std::chrono::milliseconds(1);
@@ -92,6 +128,9 @@ int main()
 			int y = centery + radius * sin(currentTime * omega - 2 * M_PI * (double)(i > centerid ? i - 1 : i) / ((double)count - 1));
 			ListView_SetItemPosition(hd, i, x, y);
 		}
+
+		if (j % 100 == 0)
+			count = SendMessage(hd, LVM_GETITEMCOUNT, 0, 0);
 	}
 
 	VirtualFreeEx(he, pC, 0, MEM_RELEASE);
